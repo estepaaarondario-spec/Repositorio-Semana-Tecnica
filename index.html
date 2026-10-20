@@ -35,6 +35,8 @@ button{font:inherit;font-weight:700;cursor:pointer;border:0;border-radius:14px;p
 button:hover{background:#d9759a;transform:translateY(-1px)}
 button.soft{background:var(--pink-soft);color:var(--ink)}
 button.soft:hover{background:var(--pink)}
+button.danger{background:#f3b4c4;color:#7a1d36}
+button.danger:hover{background:#e896ad}
 .tools{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:22px}
 .tools input{flex:1;min-width:180px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:22px}
@@ -50,7 +52,9 @@ button.soft:hover{background:var(--pink)}
 .link a:hover{text-decoration:underline}
 .link .acts{display:flex;gap:8px;margin-top:auto;padding-top:6px}
 .link .acts button{padding:6px 12px;font-size:.85rem}
-.file-info{font-size:.82rem;color:var(--muted);margin-top:-6px}
+.img-picker-container{display:flex;flex-direction:column;gap:4px}
+.img-controls{display:flex;gap:6px;align-items:center}
+.file-info{font-size:.82rem;color:var(--muted)}
 .empty{text-align:center;color:var(--muted);padding:40px 10px;border:2px dashed var(--pink);border-radius:20px;grid-column:1/-1}
 footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:30px}
 @media(max-width:720px){.form-grid{grid-template-columns:1fr}}
@@ -70,8 +74,11 @@ footer{text-align:center;color:var(--muted);font-size:.85rem;margin-top:30px}
       <input id="title" placeholder="Título (ej: Guía de soldadura)" maxlength="80">
       <input id="url" placeholder="https://..." inputmode="url">
       <input id="cat" list="cats" placeholder="Categoría" maxlength="30">
-      <div>
-        <input id="imgFile" type="file" accept="image/*">
+      <div class="img-picker-container">
+        <div class="img-controls">
+          <input id="imgFile" type="file" accept="image/*" style="flex:1;">
+          <button type="button" class="danger" id="removeImgBtn" style="display:none; padding:8px 12px; font-size:.85rem;">Quitar imagen</button>
+        </div>
         <div id="imgFileName" class="file-info">Ninguna imagen seleccionada</div>
       </div>
       <textarea id="desc" class="full-width" placeholder="Descripción breve..." maxlength="250"></textarea>
@@ -117,135 +124,20 @@ function load(){
   return SEED.slice();
 }
 
-function persist(){ try { localStorage.setItem(KEY, JSON.stringify(links)); } catch(e){} }
+function persist(){ 
+  try { 
+    localStorage.setItem(KEY, JSON.stringify(links)); 
+    return true;
+  } catch(e){
+    alert('No se pudo guardar la información porque el almacenamiento del navegador está lleno. Intentá borrar algunos links o usar imágenes más pequeñas.');
+    return false;
+  } 
+}
+
 function esc(s){ return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function fixUrl(u){ u = u.trim(); return /^https?:\/\//i.test(u) ? u : 'https://' + u; }
 
-// Manejar la carga de archivos locales de imagen
-$('imgFile').onchange = e => {
-  const f = e.target.files[0];
-  if (!f) return;
-  $('imgFileName').textContent = f.name;
+// Función para comprimir y redimensionar las imágenes
+function compressImage(file, callback) {
   const reader = new FileReader();
-  reader.onload = ev => {
-    currentImgData = ev.target.result;
-  };
-  reader.readAsDataURL(f);
-};
-
-function render(){
-  const cats = [...new Set(links.map(l => l.cat).filter(Boolean))].sort();
-  if (filter !== 'Todas' && !cats.includes(filter)) filter = 'Todas';
-  $('cats').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
-  $('chips').innerHTML = ['Todas', ...cats].map(c =>
-    `<button class="chip ${c === filter ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('');
-  
-  const q = $('q').value.toLowerCase();
-  const shown = links.filter(l => (filter === 'Todas' || l.cat === filter) &&
-    (l.title + l.url + (l.cat || '') + (l.desc || '')).toLowerCase().includes(q));
-
-  $('list').innerHTML = shown.length ? shown.map(l => `
-    <article class="link">
-      ${l.img ? `<img src="${l.img}" alt="${esc(l.title)}" class="link-img">` : ''}
-      ${l.cat ? `<span class="tag">${esc(l.cat)}</span>` : ''}
-      <h3>${esc(l.title)}</h3>
-      ${l.desc ? `<p class="desc">${esc(l.desc)}</p>` : ''}
-      <a href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(l.url)}</a>
-      <div class="acts">
-        <button class="soft" data-edit="${l.id}">Editar</button>
-        <button class="soft" data-del="${l.id}">Borrar</button>
-      </div>
-    </article>`).join('')
-    : `<div class="empty">Todavía no hay links acá. Agregá el primero arriba.</div>`;
-}
-
-function resetForm(){
-  editId = null; 
-  currentImgData = '';
-  ['title','url','cat','imgFile','desc'].forEach(i => $(i).value = '');
-  $('imgFileName').textContent = 'Ninguna imagen seleccionada';$('formTitle').textContent = 'Agregar un link'; 
-  $('save').textContent = 'Guardar';$('cancelBtn').style.display = 'none';
-}
-
-$('save').onclick = () => {
-  const title = $('title').value.trim(), url =$('url').value.trim();
-  if (!title || !url) { alert('Completá al menos el título y el link.'); return; }
-  
-  // Si estamos editando y no se seleccionó nueva imagen, conservamos la que ya tenía
-  let finalImg = currentImgData;
-  if (editId && !finalImg) {
-    const existing = links.find(l => l.id === editId);
-    if (existing) finalImg = existing.img || '';
-  }
-
-  const item = {
-    title,
-    url: fixUrl(url),
-    cat: $('cat').value.trim() || 'General',
-    img: finalImg,
-    desc: $('desc').value.trim()
-  };
-
-  if (editId) links = links.map(l => l.id === editId ? {...l, ...item} : l);
-  else links.unshift({id: Date.now(), ...item});
-
-  persist(); resetForm(); render();
-};
-
-$('cancelBtn').onclick = resetForm;
-
-document.addEventListener('click', e => {
-  const t = e.target;
-  if (t.dataset.cat) { filter = t.dataset.cat; render(); }
-  if (t.dataset.del && confirm('¿Borrar este link?')) { 
-    links = links.filter(l => l.id != t.dataset.del); 
-    if (editId == t.dataset.del) resetForm();
-    persist(); render(); 
-  }
-  if (t.dataset.edit) {
-    const l = links.find(x => x.id == t.dataset.edit); if (!l) return;
-    editId = l.id; 
-    $('title').value = l.title; 
-    $('url').value = l.url; 
-    $('cat').value = l.cat \vert{}\vert{} '';$('desc').value = l.desc || '';
-    currentImgData = l.img || '';
-    $('imgFileName').textContent = l.img ? 'Imagen actual conservada' : 'Ninguna imagen seleccionada';
-    $('formTitle').textContent = 'Editar link';$('save').textContent = 'Guardar cambios';
-    $('cancelBtn').style.display = 'inline-block';$('title').focus(); 
-    window.scrollTo({top:0, behavior:'smooth'});
-  }
-});
-
-$('q').oninput = render;
-
-$('export').onclick = () => {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([JSON.stringify(links, null, 2)], {type:'application/json'}));
-  a.download = 'semana-tecnica-links.json'; a.click(); URL.revokeObjectURL(a.href);
-};
-
-$('import').onclick = () => $('file').click();$('file').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const d = JSON.parse(r.result);
-      if (!Array.isArray(d)) throw 0;
-      links = d.filter(x => x && x.title && x.url).map((x, i) => ({
-        id: Date.now() + i,
-        title: String(x.title),
-        url: String(x.url),
-        cat: String(x.cat || 'General'),
-        img: String(x.img || ''),
-        desc: String(x.desc || '')
-      }));
-      persist(); render();
-    } catch(err) { alert('El archivo no es válido. Usá uno creado con Exportar.'); }
-  };
-  r.readAsText(f); e.target.value = '';
-};
-
-render();
-</script>
-</body>
-</html>
+  reader.readAsDataURL(file);
